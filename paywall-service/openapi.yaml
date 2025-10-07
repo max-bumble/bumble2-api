@@ -1,0 +1,337 @@
+openapi: 3.1.0
+info:
+  title: Paywall API
+  version: 0.0.1
+  description: >
+    Returns purchasable packages and variants for the caller’s context (platform, partner, promo, etc).
+
+servers:
+  - url: https://api.example.com/v1
+
+tags:
+  - name: paywall
+    description: Endpoints to retrieve paywall configuration and package options.
+
+paths:
+  /paywall:
+    get:
+      tags: [paywall]
+      summary: Get paywall
+      operationId: getPaywall
+      description: >
+        Returns the paywall with products, variants, price tokens and allowed payment options.
+
+      security:
+        - bearerAuth: []
+
+      parameters:
+        - in: query
+          name: countryCode
+          description: Country code (ISO-3166-1 alpha-2).
+          schema: { type: string, minLength: 2, maxLength: 2 }
+        - in: query
+          name: service
+          description: Service identifier (e.g. `BumbleBoost`, `BumbleSpotlightCredits`)
+          schema: { type: string }
+        - in: query
+          name: serviceLevelId
+          description: Service level identifier.
+          schema: { type: integer, format: int32, minimum: 0 }
+        - in: query
+          name: language
+          description: BCP-47 language tag (e.g. `en-us`).
+          schema: { type: string }
+        - in: query
+          name: flow
+          description: Platform identifier (e.g. `iphone`, `android`, `web`).
+          schema: { type: string }
+          examples:
+            iphone: { value: iphone }
+            android: { value: android }
+            web: { value: web }
+        - in: query
+          name: partnerId
+          description: Partner identifier.
+          schema: { type: integer, format: int32, minimum: 0 }
+        - in: query
+          name: appId
+          description: App identifier.
+          schema: { type: integer, format: int32, minimum: 0 }
+        - in: query
+          name: promoId
+          description: Promo identifier.
+          schema: { type: integer, format: int32, minimum: 0 }
+        - in: query
+          name: promoOnly
+          description: Return only promo packages.
+          schema: { type: boolean }
+        - in: query
+          name: tncShortVersion
+          description: >
+            Version selector for T&C short text. Currently only `sectioned_paywall` is supported.
+          schema:
+            type: string
+            enum: [sectioned_paywall]
+        - in: query
+          name: paymentType
+          description: Filter by allowed payment types. Multiple values allowed.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/PaymentType' }
+            maxItems: 4
+        - in: header
+          name: If-None-Match
+          description: Optional caching header to receive 304 when unchanged (ETag support).
+          schema: { type: string }
+
+      responses:
+        '200':
+          description: Successful response.
+          headers:
+            ETag:
+              description: Entity tag for conditional requests.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaywallResponse' }
+        '304':
+          description: Not Modified (returned when `If-None-Match` matches current ETag).
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429':
+          description: Too Many Requests
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying.
+              schema: { type: integer, minimum: 0 }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '500': { $ref: '#/components/responses/ServerError' }
+        '503':
+          description: Service Unavailable
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying.
+              schema: { type: integer, minimum: 0 }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    PaywallRequest:
+      type: object
+      properties:
+        countryCode: { type: string }
+        service: { type: string }
+        serviceLevelId: { type: integer, format: int32, minimum: 0 }
+        language: { type: string }
+        flow: { type: string, description: "Platform identifier (e.g. iphone, android, web)" }
+        partnerId: { type: integer, format: int32, minimum: 0 }
+        appId: { type: integer, format: int32, minimum: 0 }
+        promoId: { type: integer, format: int32, minimum: 0 }
+        promoOnly: { type: boolean }
+        tncShortVersion:
+          type: string
+          enum: [sectioned_paywall]
+        paymentType:
+          type: array
+          items: { $ref: '#/components/schemas/PaymentType' }
+
+    PaywallResponse:
+      type: object
+      properties:
+        serviceAmountDefault:
+          type: string
+          description: The selected default service option
+        product:
+          type: array
+          description: List of available products for purchase
+          items: { $ref: '#/components/schemas/Product' }
+        errorMessage:
+          description: The error message to be shown to the user
+          type: string
+        paymentTypeRegistry:
+          type: array
+          description: Register of payment methods data
+          items: { $ref: '#/components/schemas/PaymentTypeData' }
+
+    Product:
+      type: object
+      properties:
+        priceData: { $ref: '#/components/schemas/Price' }
+        discount: { type: string }
+        previousPriceText: { type: string }
+        serviceAmount: { type: string }
+        unitAmount:
+          description: Amount of service provided to be shown to the user (e.g. `5`)
+          type: string
+        unitName:
+          description: Provided service to be shown to the user (e.g. `Spotlights`)
+          type: string
+        name: { type: string }
+        badge:
+          description: Badge to be shown on the product
+          type: string
+          enum: [best_price, most_popular, special]
+        productVariant:
+          type: array
+          items: { $ref: '#/components/schemas/ProductVariant' }
+        priority: { type: integer, format: int32, minimum: 0 }
+        a11yName: { type: string }
+        previousName: { type: string }
+        tnc: { type: string }
+
+    ProductVariant:
+      type: object
+      properties:
+        paymentType:
+          $ref: '#/components/schemas/PaymentType'
+        priceToken:
+          $ref: '#/components/schemas/PriceToken'
+        tncShort:
+          type: string
+        storeProductId:
+          type: string
+        isRenewable:
+          type: boolean
+        isAutoTopAvailable:
+          type: boolean
+        upgrade:
+          $ref: '#/components/schemas/Upgrade'
+
+    Price:
+      type: object
+      properties:
+        price: { type: string }
+        symbol: { type: string }
+        isoCode: { type: string }
+        decimalPlaces: { type: integer, format: int32, minimum: 0 }
+        pattern:
+          description: Template for how to display the price for the user `#sign##symbol##price#`
+          type: string
+        showDecimals: { type: boolean }
+
+    Upgrade:
+      type: object
+      properties:
+        priceToPay:
+          description: Price to pay for the upgrade
+          type: string
+        renewPriceIncrease:
+          description: Price increase on renewal
+          type: string
+
+    PaymentType:
+      type: string
+      description: List of supported payment methods
+      enum: [credit_card, apple, google, paypal]
+
+    PaymentTypeData:
+      type: object
+      properties:
+        paymentType: { $ref: '#/components/schemas/PaymentType' }
+        priority: { type: integer, format: int32, minimum: 0 }
+        title: { type: string }
+        titleForStoredDetails: { type: string }
+        isStoredDetailsAvailable:
+          description: Can the method work with saved details for future payments?
+          type: boolean
+        externalParamsPayPal:
+          $ref: '#/components/schemas/ExternalParamsPayPal'
+      additionalProperties: false
+
+    ExternalParamsPayPal:
+      type: object
+      properties:
+        environment: { type: string }
+        locale: { type: string }
+      additionalProperties: false
+
+    PriceToken:
+      type: object
+      description: >
+        An object that defines what the user is purchasing
+      properties:
+        userId: { type: string }
+        productId: { type: integer, format: int32, minimum: 0 }
+        modifier:
+          type: array
+          description: Promo-related modifiers that may affect the amount of service provided, goes from Promo service
+          items: { $ref: '#/components/schemas/Modifier' }
+        quantity:
+          type: integer,
+          description: Quantity of the product to be provided
+          format: int32,
+          minimum: 0
+        expire:
+          type: integer
+          format: int32
+          description: Expiration time (epoch seconds).
+          minimum: 0
+        signature:
+          type: string
+          description: Price token signature, which we need to pass during purchase
+
+    Modifier:
+      type: object
+      description: A pricing modifier entry.
+      properties:
+        id: { type: string }
+        type: { $ref: '#/components/schemas/ModifierType' }
+      required: [id, type]
+      additionalProperties: false
+
+    ModifierType:
+      type: string
+      description: Type of modifier.
+      enum: [unspecified, bonus_credits]
+
+    ApiError:
+      type: object
+      required: [type, title, status, traceId]
+      properties:
+        type: { type: string, format: uri, description: Machine-readable error type }
+        title: { type: string, description: Summary of the problem }
+        status: { type: integer, description: HTTP status code }
+        detail: { type: string, description: Human-readable details }
+        retryAfterMs: { type: integer, minimum: 0, description: Client hint for retries where applicable }
+        traceId: { type: string, description: Correlates logs/traces }
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+    NotFound:
+      description: Not Found
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+    Unprocessable:
+      description: Unprocessable Entity
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiError' } }
+    ServerError:
+      description: Internal Server Error
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/ApiError' } }

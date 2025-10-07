@@ -1,0 +1,491 @@
+openapi: 3.1.0
+info:
+  title: Paywall API
+  version: "1.0.0"
+  description: |
+    Returns paywall and perk-list configuration to render UI components.
+
+servers:
+  - url: https://api.example.com
+
+tags:
+  - name: Paywalls
+    description: Endpoints that return paywall UIs and data.
+  - name: Perks
+    description: Endpoints that return perk lists and upsells.
+
+paths:
+  /paywall/:
+    post:
+      tags: [Paywalls]
+      summary: Fetch paywall data
+      description: Returns paywall layout and components for the current user/session.
+      operationId: postPaywall
+      requestBody:
+        $ref: '#/components/requestBodies/PaywallRequestBody'
+      responses:
+        "200":
+          description: Paywall data retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Paywall.Response'
+              examples:
+                demo:
+                  value:
+                    layout_type: fullScreen
+                    paywalls:
+                      - logo: "bumble"
+                        title: "Premium+"
+                        components:
+                          - type: header_poster_banner
+                            image_string: "https://bumble.com/example.png"
+                            title: "Shine your brightest with Premium+"
+                          - type: icon_banner
+                            image_string: "badge_feature_incognito"
+                            title: "Incognito mode"
+                            description: "Only be shown to people you've liked"
+                          - type: product_list
+                            products:
+                              - id: "1234"
+                                type: small
+                                title: "1 month"
+                                price: "$16.33/wk"
+                                caption: "Most popular"
+                                badge_title: "Save 50%"
+                                footer:
+                                  type: action_only
+                                  buttons:
+                                    - type: primary
+                                      title: "Get 1 week for $32.99"
+                                      action: payment_method_selection
+                                payment_methods:
+                                  type: compact_modal
+                                  title: "Payment method"
+                                  description: "Choose how you want to pay"
+                                  footer: "This is a recurring monthly purchase."
+                                  methods:
+                                    - type: apple
+                                      title: "Pay with Apple"
+                                      subtitle: "$32.99"
+                                      image_string: "apple_icon"
+                                      price_token: "1234567890"
+                          - type: perk_highlights
+                            title: "Why upgrade?"
+                            perks:
+                              - type: row
+                                image_string: "badge-feature-liked-you"
+                                title: "See who liked you"
+                            buttons:
+                              - type: tertiary
+                                title: "See all perks"
+                                action: open_perks
+        "400":
+          $ref: '#/components/responses/BadRequest'
+
+  /paywall/perks:
+    get:
+      tags: [Perks]
+      summary: Fetch perk list data
+      description: Returns perk list layout and components for the requested product type.
+      operationId: getPerks
+      parameters:
+        - $ref: '#/components/parameters/ProductTypeParam'
+      responses:
+        "200":
+          description: Perk list retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perks.Response'
+              examples:
+                demo:
+                  value:
+                    layout_type: fullScreen
+                    title: "Premium perks"
+                    perks:
+                      - type: row
+                        image_string: "badge-feature-boost"
+                        title: "Be seen first"
+                    upsell:
+                      type: upsell
+                      title: "Get more with Premium"
+                      perks:
+                        - type: row
+                          image_string: "badge-feature-liked-you"
+                          title: "See who liked you"
+                      buttons:
+                        - type: secondary
+                          title: "Explore Premium"
+                          action: premium_upsell
+        "400":
+          $ref: '#/components/responses/BadRequest'
+
+components:
+  # ---------- Reusable parameters / request bodies / responses ----------
+  parameters:
+    ProductTypeParam:
+      name: type
+      in: query
+      required: true
+      description: Product type for which to retrieve perks.
+      schema:
+        type: string
+        enum: [boost_light, premium, premium_plus]
+
+  requestBodies:
+    PaywallRequestBody:
+      description: Tokenized context required to assemble a user/session-specific paywall.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Paywall.Request'
+          example:
+            token: "abc123456"
+
+  responses:
+    BadRequest:
+      description: Bad request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Common.Error'
+
+  # ------------------------------- Schemas -------------------------------
+  schemas:
+    # ===== Requests / Responses =====
+    Paywall.Request:
+      title: PaywallRequest
+      type: object
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          description: Token carrying transaction/session context (not required for UX rendering itself).
+      required: [token]
+
+    Paywall.Response:
+      title: PaywallResponse
+      type: object
+      additionalProperties: false
+      properties:
+        layout_type:
+          type: string
+          description: Layout selection for the paywall response.
+          enum: [compact, fullScreen]
+        paywalls:
+          type: array
+          items:
+            $ref: '#/components/schemas/Paywall.Data'
+      required: [layout_type, paywalls]
+
+    Perks.Response:
+      title: PerksResponse
+      type: object
+      additionalProperties: false
+      properties:
+        layout_type:
+          type: string
+          description: Layout selection for the perks response.
+          enum: [compact, fullScreen]
+        title:
+          type: string
+        perks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Perk.Item'
+        upsell:
+          $ref: '#/components/schemas/Perk.Upsell'
+      required: [layout_type, title, perks]
+
+    # ===== Paywall data & components =====
+    Paywall.Data:
+      title: PaywallData
+      type: object
+      additionalProperties: false
+      properties:
+        logo:
+          type: string
+          description: Logo identifier to display instead of a text title.
+        title:
+          type: string
+          description: Paywall title.
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/Component'
+      required: [components]
+
+    # Polymorphic component (oneOf + discriminator)
+    Component:
+      title: Component
+      oneOf:
+        - $ref: '#/components/schemas/Banner.HeaderPoster'
+        - $ref: '#/components/schemas/Banner.Icon'
+        - $ref: '#/components/schemas/Banner.ProfileImage'
+        - $ref: '#/components/schemas/Product.List'
+        - $ref: '#/components/schemas/Perk.Highlights'
+        - $ref: '#/components/schemas/Perk.Upsell'
+      discriminator:
+        propertyName: type
+        mapping:
+          header_poster_banner: '#/components/schemas/Banner.HeaderPoster'
+          icon_banner: '#/components/schemas/Banner.Icon'
+          profile_image_banner: '#/components/schemas/Banner.ProfileImage'
+          product_list: '#/components/schemas/Product.List'
+          perk_highlights: '#/components/schemas/Perk.Highlights'
+          upsell: '#/components/schemas/Perk.Upsell'
+
+    # ===== Banner variants =====
+    Banner.HeaderPoster:
+      type: object
+      additionalProperties: false
+      properties:
+        type: { const: header_poster_banner }
+        image_string:
+          type: string
+          format: uri
+        title:
+          type: string
+      required: [type, image_string, title]
+      example:
+        type: header_poster_banner
+        image_string: "https://bumble.com/example.png"
+        title: "Shine your brightest with Premium+"
+
+    Banner.Icon:
+      type: object
+      additionalProperties: false
+      properties:
+        type: { const: icon_banner }
+        image_string: { type: string }
+        title: { type: string }
+        description: { type: string }
+      required: [type, image_string, title, description]
+      example:
+        type: icon_banner
+        image_string: "badge_feature_incognito"
+        title: "Incognito mode"
+        description: "Only be shown to people you've liked"
+
+    Banner.ProfileImage:
+      type: object
+      additionalProperties: false
+      properties:
+        type: { const: profile_image_banner }
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+        badge: { type: string }
+        title: { type: string }
+        description: { type: string }
+      required: [type, images, title, description]
+      example:
+        type: profile_image_banner
+        images:
+          - "https://bumble.com/member_1.png"
+          - "https://bumble.com/member_2.png"
+          - "https://bumble.com/member_3.png"
+        title: "Unlimited Backtrack"
+        description: "Passed someone? Undo it to take another look"
+
+    # ===== Products =====
+    Product.List:
+      type: object
+      additionalProperties: false
+      properties:
+        type: { const: product_list }
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product.Item'
+      required: [type, products]
+
+    Product.Item:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [small, stretched, full_width]
+        title:
+          type: string
+          example: "1 month"
+        price:
+          type: string
+          example: "$16.33/wk"
+        caption:
+          type: string
+          example: "Most popular"
+        badge_title:
+          type: string
+          example: "Save 50%"
+        is_default: { type: boolean }
+        footer:
+          $ref: '#/components/schemas/Common.Footer'
+        payment_methods:
+          $ref: '#/components/schemas/Payment.Options'
+      required: [id, type, title, price]
+
+    # ===== Payments =====
+    Payment.Options:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [compact_modal]
+        title: { type: string }
+        description: { type: string }
+        footer: { type: string }
+        methods:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payment.Method'
+      required: [type, methods, footer]
+      example:
+        type: compact_modal
+        title: "Payment method"
+        description: "Choose how you want to pay"
+        footer: "This is a recurring monthly purchase."
+        methods:
+          - type: apple
+            title: "Pay with Apple"
+            subtitle: "$32.99"
+            image_string: "apple_icon"
+            price_token: "1234567890"
+          - type: credit_card
+            title: "Pay with card"
+            subtitle: "$32.99"
+            image_string: "credit_card_icon"
+            price_token: "1234567890"
+
+    Payment.Method:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [credit_card, apple]
+        title: { type: string }
+        subtitle: { type: string }
+        image_string: { type: string }
+        price_token:
+          type: string
+          description: Opaque token representing the priced offer.
+      required: [type, title, subtitle, image_string, price_token]
+      example:
+        type: apple
+        title: "Pay with Apple"
+        subtitle: "$32.99"
+        image_string: "apple_icon"
+        price_token: "1234567890"
+
+    # ===== Perks (base + variants) =====
+    Perk.Base:
+      type: object
+      additionalProperties: false
+      properties:
+        type: { type: string }  # discriminator lives here; no enum to keep variants satisfiable
+        title: { type: string }
+        perks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Perk.Item'
+        buttons:
+          type: array
+          items:
+            $ref: '#/components/schemas/Common.Button'
+      required: [type, title, perks]
+
+    Perk.Highlights:
+      allOf:
+        - $ref: '#/components/schemas/Perk.Base'
+        - type: object
+          properties:
+            type: { const: perk_highlights }
+          example:
+            type: perk_highlights
+            title: "Why upgrade?"
+            perks:
+              - type: row
+                image_string: "badge-feature-liked-you"
+                title: "See who liked you"
+            buttons:
+              - type: tertiary
+                title: "See all perks"
+                action: open_perks
+
+    Perk.Upsell:
+      allOf:
+        - $ref: '#/components/schemas/Perk.Base'
+        - type: object
+          properties:
+            type: { const: upsell }
+          example:
+            type: upsell
+            title: "Get more with Premium"
+            perks:
+              - type: row
+                image_string: "badge-feature-boost"
+                title: "Be seen first"
+            buttons:
+              - type: secondary
+                title: "Explore Premium"
+                action: premium_upsell
+
+    Perk.Item:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [row]
+        image_string: { type: string }
+        title: { type: string }
+        subtitle: { type: string }
+      required: [type, image_string, title]
+
+    # ===== Common UI bits =====
+    Common.Footer:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [action_only, discount, tnc]
+        title: { type: string }
+        buttons:
+          type: array
+          items:
+            $ref: '#/components/schemas/Common.Button'
+      required: [type, buttons]
+      example:
+        type: action_only
+        buttons:
+          - type: primary
+            title: "Get 1 week for $32.99"
+            action: payment_method_selection
+
+    Common.Button:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [primary, secondary, tertiary]
+        title: { type: string }
+        action:
+          type: string
+          enum: [open_perks, premium_upsell, "premium+_upsell", iap, payment_method_selection]
+      required: [type, title, action]
+
+    Common.Error:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
