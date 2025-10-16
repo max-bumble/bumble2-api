@@ -63,7 +63,7 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}/b4f-service
+      url: ${{ steps.deployment.outputs.page_url }}b4f-service
     runs-on: ubuntu-latest
     needs: build
     steps:
