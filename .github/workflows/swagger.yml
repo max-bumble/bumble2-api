@@ -17,70 +17,19 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Define services
-        id: cfg
+      - name: Make script executable
+        run: chmod +x .github/build-swagger-pages.sh
+
+      - name: Build Swagger UIs from config
         run: |
-          cat > services.list << 'EOF'
-          b4f-service:b4f-service/openapi.yml
-          paywall-service:paywall-service/openapi.yaml
-          EOF
-
-      - name: Prepare dist
-        run: |
-          rm -rf dist
-          mkdir -p dist/_ui
-
-      - name: Pull Swagger UI once
-        run: |
-          cid=$(docker create swaggerapi/swagger-ui:latest)
-          docker cp "$cid":/usr/share/nginx/html/. dist/_ui/
-          docker rm -f "$cid"
-
-      - name: Build a UI per service
-        shell: bash
-        run: |
-          set -euo pipefail
-          while IFS=: read -r NAME SPEC; do
-            [[ -z "$NAME" || -z "$SPEC" ]] && continue
-
-            # Target folder
-            mkdir -p "dist/$NAME"
-
-            # Copy UI template into service folder
-            rsync -a "dist/_ui/" "dist/$NAME/"
-
-            # Overwrite initializer to pin to local spec
-            cat > "dist/$NAME/swagger-initializer.js" << 'EOF_INIT'
-            window.ui = SwaggerUIBundle({
-              url: "openapi.yml",
-              dom_id: '#swagger-ui',
-              deepLinking: true,
-              presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-              layout: "StandaloneLayout"
-            });
-            EOF_INIT
-
-            # Copy the spec (normalize to openapi.yml regardless of source extension)
-            if [[ ! -f "$SPEC" ]]; then
-              echo "::error::Spec not found: $SPEC"
-              exit 1
-            fi
-            cp "$SPEC" "dist/$NAME/openapi.yml"
-
-            # If the spec has $ref-ed files (e.g., components/*), copy them too
-            SPEC_DIR="$(cd "$(dirname "$SPEC")" && pwd)"
-            if [[ -d "$SPEC_DIR/components" ]]; then
-              rsync -a "$SPEC_DIR/components/" "dist/$NAME/components/" 2>/dev/null || true
-            fi
-          done < services.list
-
-          # Optional: remove the temporary UI template
-          rm -rf dist/_ui
+          test -f .github/swagger-services.txt || {
+            echo "::error::.github/swagger-services.txt not found"; exit 1;
+          }
+          ./.github/build-swagger-pages.sh .github/swagger-services.txt
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -93,6 +42,7 @@ jobs:
   deploy:
     environment:
       name: github-pages
+      # Keep base URL since we publish multiple subpaths under it
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build

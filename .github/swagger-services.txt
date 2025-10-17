@@ -1,0 +1,2 @@
+b4f-service:../b4f-service/openapi.yml
+paywall-service:../paywall-service/openapi.yaml
